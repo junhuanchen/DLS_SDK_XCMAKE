@@ -21,6 +21,8 @@ struct _exlcm_lcm_jyt_t
     char*      src_addr;
     char*      req_addr;
     char*      rep_addr;
+    int16_t    cmd_flag;
+    int16_t    cmd_data;
     int32_t    time_ss;
     int8_t     time_ms;
     int8_t     req_state;

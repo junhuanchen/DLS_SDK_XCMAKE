@@ -73,7 +73,9 @@ struct _sample_cfg_
 {
     bool is_load = false;
     bool has_cfg = false;
-    int capture = false;
+    int capture = 0;
+    int monitor = 0;
+    int reload = 0;
 
     std::string audio_recv_ip;
     std::string audio_recv_port;
@@ -149,6 +151,24 @@ struct _sample_cfg_
                 else if (user_data == "capture")
                 {
                     capture = 3; // 抓拍次数
+                }
+                else if (user_data == "default")
+                {
+                    monitor = 0; // 默认模式
+                    capture = 0; // 抓拍次数
+                    printf("monitor = %d\n", monitor);
+                }
+                else if (user_data == "monitor")
+                {
+                    monitor = 1; // 监控模式（后板不再同步音频给前板）
+                    printf("monitor = %d\n", monitor);
+                }
+                else if (user_data == "reload")
+                {
+                    get_addr_port(audio_send_addr, audio_send_ip, audio_send_port);
+                    reload = 1; // 重载IP配置（只允许重载音频发送端）
+                    sleep(1);
+                    printf("reload = %d\n", reload);
                 }
             }
             catch (json5pp::syntax_error e)
@@ -332,7 +352,7 @@ extern "C"
         sockets->audio_send_state = 0;
 
         if (!cfgs->has_cfg) { usleep(40*1000); return -1; }
-        
+        if (cfgs->monitor) { usleep(40*1000); return -1; }
         PRINT_LOG("sample_sock_audio_send size = %d\n", size);
         if (sockets->audio_send == nullptr)
         {
@@ -368,6 +388,12 @@ extern "C"
         //     }
         // }
         
+        if (cfgs->reload)
+        {
+            cfgs->reload = 0;
+            sockets->audio_send->Disconnect();
+            printf("reconnect sample_sock_audio_send\n");
+        }
         sockets->audio_send_state = 1;
 
         return size;
@@ -556,8 +582,18 @@ int dhv_main(int argc, char **argv)
 // 触发抓拍（默认 3 张）
 // export IP=0.0.0.0 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","capture"]' > /tmp/sample_cfg.json
 
-// 后板配置 192.168.1.1
-// export IP=192.168.1.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","load"]' > /tmp/sample_cfg.json && cd /root/bin && ./demo 1 0
+// 后板配置 192.168.101.1
+// export IP=192.168.101.1 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","load"]' > /tmp/sample_cfg.json && cd /root/bin && ./sample_dls 1 0
 
-// 前板配置 192.168.1.2
-// export IP=192.168.1.1 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","load"]' > /tmp/sample_cfg.json && cd /root/bin && ./demo 0 1
+// 前板配置 192.168.101.2
+// export IP=192.168.101.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","load"]' > /tmp/sample_cfg.json && cd /root/bin && ./sample_dls 0 1
+
+// 后板监控模式
+// export IP=192.168.101.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","monitor"]' > /tmp/sample_cfg.json
+
+// 恢复默认配置
+// export IP=192.168.101.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","default"]' > /tmp/sample_cfg.json
+
+// 重载音频源，允许改变地址（会被后板监控模式屏蔽）
+// export IP=192.168.101.1 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","reload"]' > /tmp/sample_cfg.json
+

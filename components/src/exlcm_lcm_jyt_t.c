@@ -21,10 +21,12 @@ uint64_t __exlcm_lcm_jyt_t_hash_recursive(const __lcm_hash_ptr *p)
     cp.v = __exlcm_lcm_jyt_t_get_hash;
     (void) cp;
 
-    uint64_t hash = (uint64_t)0xedfed426d1c2dd69LL
+    uint64_t hash = (uint64_t)0x1318f8a506c4f193LL
          + __string_hash_recursive(&cp)
          + __string_hash_recursive(&cp)
          + __string_hash_recursive(&cp)
+         + __int16_t_hash_recursive(&cp)
+         + __int16_t_hash_recursive(&cp)
          + __int32_t_hash_recursive(&cp)
          + __int8_t_hash_recursive(&cp)
          + __int8_t_hash_recursive(&cp)
@@ -60,6 +62,12 @@ int __exlcm_lcm_jyt_t_encode_array(void *buf, int offset, int maxlen, const exlc
         if (thislen < 0) return thislen; else pos += thislen;
 
         thislen = __string_encode_array(buf, offset + pos, maxlen - pos, &(p[element].rep_addr), 1);
+        if (thislen < 0) return thislen; else pos += thislen;
+
+        thislen = __int16_t_encode_array(buf, offset + pos, maxlen - pos, &(p[element].cmd_flag), 1);
+        if (thislen < 0) return thislen; else pos += thislen;
+
+        thislen = __int16_t_encode_array(buf, offset + pos, maxlen - pos, &(p[element].cmd_data), 1);
         if (thislen < 0) return thislen; else pos += thislen;
 
         thislen = __int32_t_encode_array(buf, offset + pos, maxlen - pos, &(p[element].time_ss), 1);
@@ -109,6 +117,10 @@ int __exlcm_lcm_jyt_t_encoded_array_size(const exlcm_lcm_jyt_t *p, int elements)
 
         size += __string_encoded_array_size(&(p[element].rep_addr), 1);
 
+        size += __int16_t_encoded_array_size(&(p[element].cmd_flag), 1);
+
+        size += __int16_t_encoded_array_size(&(p[element].cmd_data), 1);
+
         size += __int32_t_encoded_array_size(&(p[element].time_ss), 1);
 
         size += __int8_t_encoded_array_size(&(p[element].time_ms), 1);
@@ -145,6 +157,12 @@ int __exlcm_lcm_jyt_t_decode_array(const void *buf, int offset, int maxlen, exlc
         thislen = __string_decode_array(buf, offset + pos, maxlen - pos, &(p[element].rep_addr), 1);
         if (thislen < 0) return thislen; else pos += thislen;
 
+        thislen = __int16_t_decode_array(buf, offset + pos, maxlen - pos, &(p[element].cmd_flag), 1);
+        if (thislen < 0) return thislen; else pos += thislen;
+
+        thislen = __int16_t_decode_array(buf, offset + pos, maxlen - pos, &(p[element].cmd_data), 1);
+        if (thislen < 0) return thislen; else pos += thislen;
+
         thislen = __int32_t_decode_array(buf, offset + pos, maxlen - pos, &(p[element].time_ss), 1);
         if (thislen < 0) return thislen; else pos += thislen;
 
@@ -178,6 +196,10 @@ int __exlcm_lcm_jyt_t_decode_array_cleanup(exlcm_lcm_jyt_t *p, int elements)
         __string_decode_array_cleanup(&(p[element].req_addr), 1);
 
         __string_decode_array_cleanup(&(p[element].rep_addr), 1);
+
+        __int16_t_decode_array_cleanup(&(p[element].cmd_flag), 1);
+
+        __int16_t_decode_array_cleanup(&(p[element].cmd_data), 1);
 
         __int32_t_decode_array_cleanup(&(p[element].time_ss), 1);
 
@@ -227,6 +249,10 @@ int __exlcm_lcm_jyt_t_clone_array(const exlcm_lcm_jyt_t *p, exlcm_lcm_jyt_t *q, 
         __string_clone_array(&(p[element].req_addr), &(q[element].req_addr), 1);
 
         __string_clone_array(&(p[element].rep_addr), &(q[element].rep_addr), 1);
+
+        __int16_t_clone_array(&(p[element].cmd_flag), &(q[element].cmd_flag), 1);
+
+        __int16_t_clone_array(&(p[element].cmd_data), &(q[element].cmd_data), 1);
 
         __int32_t_clone_array(&(p[element].time_ss), &(q[element].time_ss), 1);
 
