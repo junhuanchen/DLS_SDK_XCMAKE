@@ -11,6 +11,10 @@
 #include <iostream>
 #include "json5pp.hpp"
 
+#include "hv/TcpServer.h"
+
+using namespace hv;
+
 #define TCP_NODELAY		1	/* Turn off Nagle's algorithm. */
 #define TCP_CORK		3	/* Never send partially complete segments */
 #define TCP_QUICKACK		12	/* Block/reenable quick acks */
@@ -74,7 +78,7 @@ struct _sample_cfg_
     bool is_load = false;
     bool has_cfg = false;
     int capture = 0;
-    int monitor = 0;
+    int monitor = 1; // 默认监控模式
     int reload = 0;
 
     std::string audio_recv_ip;
@@ -165,9 +169,8 @@ struct _sample_cfg_
                 }
                 else if (user_data == "reload")
                 {
-                    get_addr_port(audio_send_addr, audio_send_ip, audio_send_port);
+                    sample_cfg_load(audio_send_addr, video_send_addr, audio_recv_addr, video_recv_addr);
                     reload = 1; // 重载IP配置（只允许重载音频发送端）
-                    sleep(1);
                     printf("reload = %d\n", reload);
                 }
             }
@@ -183,7 +186,7 @@ struct _sample_cfg_
 
         if (is_load == false) // 如果上电没有配置项，为了初始化，自己生成。
         {
-            system("echo '[\"0.0.0.0:1030\",\"0.0.0.0:2814\",\"0.0.0.0:1030\",\"0.0.0.0:2814\",\"load\"]' > /tmp/sample_cfg.json");
+            system("echo '[\"0.0.0.0:1030\",\"0.0.0.0:2812\",\"0.0.0.0:1030\",\"0.0.0.0:2812\",\"load\"]' > /tmp/sample_cfg.json");
             is_load = true;
         }
     }
@@ -214,11 +217,64 @@ extern "C"
         std::cout << "[video]" << strLogMsg << std::endl; 
     };
 
+    std::queue<std::array<uint8_t, 1024>> audio_recv_data;
+    hloop_t* audio_recv_loop = nullptr;
+    std::mutex audio_recv_mutex;
+    static void audio_on_close(hio_t* io) {
+        printf("audio_on_close\n");
+    }
+
+    static void audio_on_recv(hio_t* io, void* buf, int readbytes) {
+        // hio_write(io, buf, readbytes);
+        // printf("audio_on_recv %d\n", readbytes);
+        if (readbytes < 1024)
+        {
+            std::lock_guard<std::mutex> locker(audio_recv_mutex);
+            std::array<uint8_t, 1024> tmp;
+            memcpy(tmp.data(), &readbytes, sizeof(readbytes));
+            memcpy(tmp.data() + sizeof(readbytes), buf, readbytes);
+            audio_recv_data.push(std::move(tmp));
+        }
+    }
+
+    static void audio_on_accept(hio_t* io) {
+        // 设置close回调
+        hio_setcb_close(io, audio_on_close);
+        // 设置read回调
+        hio_setcb_read(io, audio_on_recv);
+        // 开始读
+        hio_read(io);
+    }
+
+    static void audio_on_thread(std::thread **self) {
+        // hloop_t* loop = hloop_new(0);
+        // hlog_set_handler(network_logger);
+        // nlog_listen(loop, DEFAULT_LOG_PORT);
+        // htimer_add(loop, timer_write_log, 1000, INFINITE);
+        // hloop_run(loop);
+        // hloop_free(&loop);
+        while (*self)
+        {
+            audio_recv_loop = hloop_new(0);
+            hio_t* audio_recv_listenio = hloop_create_tcp_server(audio_recv_loop, cfgs->audio_recv_ip.c_str(), atoi(cfgs->audio_recv_port.c_str()), audio_on_accept);
+            if (audio_recv_listenio != NULL) {
+                hloop_run(audio_recv_loop);
+            }
+            hloop_free(&audio_recv_loop);
+            audio_recv_loop = nullptr;
+            sleep(1);
+            printf("audio_on_thread\n");
+        }
+    }
+
     struct _sample_socket_
     {
+        std::thread *audio_recv = nullptr;
+        // TcpServer *audio_recv = nullptr;
+        // SocketChannelPtr audio_recv_channel;
         CTCPClient *audio_send = nullptr;
-        CTCPServer *audio_recv = nullptr;
-        ASocket::Socket audio_ConnectedClient = INVALID_SOCKET;
+        // CTCPServer *audio_recv = nullptr;
+        // ASocket::Socket audio_ConnectedClient = INVALID_SOCKET;
 
         nng::socket *video_send = nullptr;//video_send;// = nng::push::open();
         nng::socket *video_recv = nullptr;//video_recv;// = nng::pull::open();
@@ -311,38 +367,40 @@ extern "C"
             if (audio_send)
             {
                 auto bak = audio_send;
-                audio_send = NULL;
+                audio_send = nullptr;
                 usleep(40*1000);
-                delete audio_send;
+                delete bak;
             }
+
+            // if (audio_ConnectedClient != INVALID_SOCKET)
+            // {
+            //     audio_ConnectedClient = INVALID_SOCKET;
+            // }
 
             if (audio_recv)
             {
                 auto bak = audio_recv;
-                audio_recv = NULL;
+                audio_recv = nullptr;
                 usleep(40*1000);
-                delete audio_recv;
-            }
-
-            if (audio_ConnectedClient != INVALID_SOCKET)
-            {
-                audio_ConnectedClient = INVALID_SOCKET;
+                if (audio_recv_loop) hloop_stop(audio_recv_loop);
+                bak->join();
+                delete bak;
             }
 
             if (video_send)
             {
                 auto bak = video_send;
-                video_send = NULL;
+                video_send = nullptr;
                 usleep(40*1000);
-                delete video_send;
+                delete bak;
             }
             
             if (video_recv)
             {
                 auto bak = video_recv;
-                video_recv = NULL;
+                video_recv = nullptr;
                 usleep(40*1000);
-                delete video_recv;
+                delete bak;
             }
         }
     } sample_socket, *sockets = &sample_socket;
@@ -402,53 +460,34 @@ extern "C"
     static int sample_sock_audio_recv(uint8_t *data, int size)
     {
         if (!cfgs->has_cfg) { usleep(40*1000); return -1; }
-        
+
         PRINT_LOG("sample_sock_audio_recv size = %d\n", size);
+        
+        sockets->audio_recv_state = 0;
+        
         if (sockets->audio_recv == nullptr)
         {
-            sockets->audio_recv = new CTCPServer(audioLogPrinter, cfgs->audio_recv_port);
+            sockets->audio_recv = new std::thread(audio_on_thread, &sockets->audio_recv);
         }
 
-        if(sockets->audio_ConnectedClient == INVALID_SOCKET)
+        // std::lock_guard<std::mutex> locker(audio_recv_mutex);
+        // audio_recv_data.push({audio_buf, readbytes});
+
+        if (audio_recv_data.size() > 0)
         {
-            int ret = sockets->audio_recv->Listen(sockets->audio_ConnectedClient, 40);
-            if (!ret)
-            {
-                PRINT_LOG("Listen %s failed\n", cfgs->audio_recv_port.c_str());
-                sockets->audio_recv_state = 0;
-                return -1;
-            }
-            // sockets->audio_recv->SetRcvTimeout(sockets->audio_ConnectedClient, 40);
-            PRINT_LOG("Listen %s success\n", cfgs->audio_recv_port.c_str());
+            auto &tmp = audio_recv_data.front();
+            memcpy(&size, tmp.data(), sizeof(size));
+            memcpy(data, tmp.data() + sizeof(size), size);
+            std::lock_guard<std::mutex> locker(audio_recv_mutex);
+            audio_recv_data.pop();
+            sockets->audio_recv_state = 1;
+            // PRINT_LOG("audio_recv_size = %d\n", size);
         }
-
-        int ret = ASocket::SelectSocket(sockets->audio_ConnectedClient, 40);
-        if (ret > 0)
+        else
         {
-            int read_size = sockets->audio_recv->Receive(sockets->audio_ConnectedClient, (char *)data, size, false);
-            if (read_size <= 0)
-            {
-                PRINT_LOG("Receive %s failed\n", cfgs->audio_recv_port.c_str());
-                sockets->audio_ConnectedClient = INVALID_SOCKET;
-                // delete sockets->audio_recv;
-                // sockets->audio_recv = nullptr;
-                sockets->audio_recv_state = 0;
-                return -1;
-            }
-            size = read_size;
-            PRINT_LOG("Receive %s success %d\n", cfgs->audio_recv_port.c_str(), read_size);
+            size = -1;
+            usleep(40*1000);
         }
-        
-        // {
-        //     static int cnt = 0;
-        //     if (++cnt > 40)
-        //     {
-        //         cnt = 0;
-        //         sockets->audio_recv->Disconnect(sockets->audio_ConnectedClient);
-        //     }
-        // }
-
-        sockets->audio_recv_state = 1;
 
         return size;
     }
@@ -562,6 +601,7 @@ int dhv_main(int argc, char **argv)
     set_sample_dls_audio_callback(sample_sock_audio_send, sample_sock_audio_recv);
     set_sample_dls_video_callback(sample_sock_video_send, sample_sock_video_recv);
 
+    printf("sample_nng_load\n");
     sample_nng_load(sockets->DLS_VO, sockets->DLS_VI);
 
     while (!get_sample_nng_exit_flag())
@@ -570,9 +610,8 @@ int dhv_main(int argc, char **argv)
         sockets->sample_socket_loop();
         cfgs->sample_cfg_loop();
     }
-
     sample_nng_free(sockets->DLS_VO, sockets->DLS_VI);
-
+    printf("sample_nng_free\n");
     return 0;
 }
 
@@ -588,10 +627,10 @@ int dhv_main(int argc, char **argv)
 // 前板配置 192.168.101.2
 // export IP=192.168.101.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","load"]' > /tmp/sample_cfg.json && cd /root/bin && ./sample_dls 0 1
 
-// 后板监控模式
+// 后板监控模式（默认值）
 // export IP=192.168.101.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","monitor"]' > /tmp/sample_cfg.json
 
-// 恢复默认配置
+// 后板对讲模式
 // export IP=192.168.101.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","default"]' > /tmp/sample_cfg.json
 
 // 重载音频源，允许改变地址（会被后板监控模式屏蔽）
