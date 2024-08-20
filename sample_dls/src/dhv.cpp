@@ -80,7 +80,7 @@ struct _sample_cfg_
     bool is_load = false;
     bool has_cfg = false;
     int capture = 0;
-    int monitor = 1; // 默认监控模式
+    int monitor = 0; // 默认监控模式
     int reload = 0;
 
     std::string audio_recv_ip;
@@ -246,7 +246,7 @@ extern "C"
             std::array<uint8_t, 1024> tmp;
             memcpy(tmp.data(), &readbytes, sizeof(readbytes));
             memcpy(tmp.data() + sizeof(readbytes), buf, readbytes);
-            if (audio_recv_data.size() > 32) {
+            if (audio_recv_data.size() > 64) {
                 audio_recv_data.pop();
             }
             audio_recv_data.push(std::move(tmp));
