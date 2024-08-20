@@ -73,6 +73,8 @@ std::string string_read_file(const std::string &path)
     return ss.str();
 }
 
+extern "C" void audio_on_clear();
+
 struct _sample_cfg_
 {
     bool is_load = false;
@@ -161,17 +163,20 @@ struct _sample_cfg_
                     monitor = 0; // 默认模式
                     capture = 0; // 抓拍次数
                     printf("monitor = %d\n", monitor);
+                    audio_on_clear();
                 }
                 else if (user_data == "monitor")
                 {
                     monitor = 1; // 监控模式（后板不再同步音频给前板）
                     printf("monitor = %d\n", monitor);
+                    audio_on_clear();
                 }
                 else if (user_data == "reload")
                 {
                     sample_cfg_load(audio_send_addr, video_send_addr, audio_recv_addr, video_recv_addr);
                     reload = 1; // 重载IP配置（只允许重载音频发送端）
                     printf("reload = %d\n", reload);
+                    audio_on_clear();
                 }
             }
             catch (json5pp::syntax_error e)
@@ -222,6 +227,14 @@ extern "C"
     std::mutex audio_recv_mutex;
     static void audio_on_close(hio_t* io) {
         printf("audio_on_close\n");
+        audio_on_clear();
+    }
+
+    void audio_on_clear()
+    {
+        std::lock_guard<std::mutex> locker(audio_recv_mutex);
+        // audio_recv_data.clear();
+        while (!audio_recv_data.empty()) audio_recv_data.pop();
     }
 
     static void audio_on_recv(hio_t* io, void* buf, int readbytes) {
@@ -233,6 +246,9 @@ extern "C"
             std::array<uint8_t, 1024> tmp;
             memcpy(tmp.data(), &readbytes, sizeof(readbytes));
             memcpy(tmp.data() + sizeof(readbytes), buf, readbytes);
+            if (audio_recv_data.size() > 32) {
+                audio_recv_data.pop();
+            }
             audio_recv_data.push(std::move(tmp));
         }
     }
