@@ -443,6 +443,17 @@ extern "C"
             sockets->audio_send->SetSndTimeout(40);
             PRINT_LOG("Connect %s:%s success\n", cfgs->audio_send_ip.c_str(), cfgs->audio_send_port.c_str());
         }
+        else
+        {
+            if (cfgs->reload)
+            {
+                cfgs->reload = 0;
+                sockets->audio_send->Disconnect();
+                printf("reconnect sample_sock_audio_send\n");
+            }
+            sockets->audio_send_state = 1;
+        }
+        
         int ret = sockets->audio_send->Send((const char*)data, size);
         if (!ret)
         {
@@ -462,14 +473,6 @@ extern "C"
         //     }
         // }
         
-        if (cfgs->reload)
-        {
-            cfgs->reload = 0;
-            sockets->audio_send->Disconnect();
-            printf("reconnect sample_sock_audio_send\n");
-        }
-        sockets->audio_send_state = 1;
-
         return size;
     }
 
@@ -593,7 +596,7 @@ extern "C"
 
 int dhv_main(int argc, char **argv)
 {
-    system("cat /dev/zero > /dev/fb0");
+    // system("cat /dev/zero > /dev/fb0");
     PRINT_LOG("Hello, dhv_main!\n");
 
     if (argc == 3)
@@ -650,5 +653,5 @@ int dhv_main(int argc, char **argv)
 // export IP=192.168.101.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","default"]' > /tmp/sample_cfg.json
 
 // 重载音频源，允许改变地址（会被后板监控模式屏蔽）
-// export IP=192.168.101.1 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","reload"]' > /tmp/sample_cfg.json
+// export IP=192.168.101.2 && echo '["'$IP':1030","'$IP':2812","0.0.0.0:1030","0.0.0.0:2812","reload"]' > /tmp/sample_cfg.json
 
