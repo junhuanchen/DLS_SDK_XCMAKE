@@ -246,7 +246,7 @@ extern "C"
             std::array<uint8_t, 1024> tmp;
             memcpy(tmp.data(), &readbytes, sizeof(readbytes));
             memcpy(tmp.data() + sizeof(readbytes), buf, readbytes);
-            if (audio_recv_data.size() > 64) {
+            if (audio_recv_data.size() > 32) {
                 audio_recv_data.pop();
             }
             audio_recv_data.push(std::move(tmp));
